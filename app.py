@@ -310,24 +310,26 @@ TRUSTED_DOMAINS = [
 ]
 
 def generate_search_query(query: dict, jurisdiction: str) -> str:
-    # Build a concrete, civic-specific query — avoid generic words like "responsible"
-    problem_short = query["problem"][:80].strip()
+    """Generate a focused, India-specific civic governance search query."""
     district = query["district"]
     state = query["state"]
     cat = query["category"] if query["category"] not in ("", "General") else ""
 
-    if jurisdiction == "Central":
-        prefix = "central government ministry department India"
-    elif jurisdiction == "State":
-        prefix = f"{state} government department"
-    else:
-        prefix = f"municipal corporation nagar palika {district} {state}"
-
-    parts = [prefix, problem_short]
+    # Use category or first 6 words of problem as the topic keyword
     if cat:
-        parts.append(cat)
-    parts.append("complaint redressal India")
-    return " ".join(parts)
+        topic = cat
+    else:
+        words = query["problem"].split()[:6]
+        topic = " ".join(words)
+
+    if jurisdiction == "Central":
+        q = f"{topic} India central government ministry official"
+    elif jurisdiction == "State":
+        q = f"{topic} {state} state government department official"
+    else:
+        q = f"{topic} {district} {state} municipal corporation nagar palika official"
+
+    return q
 
 
 def perform_search(search_query: str, max_results: int = 10) -> list:
@@ -392,24 +394,25 @@ def generate_final_answer(client: Groq, query: dict, jurisdiction: str, context:
     system = """You are DEEPSI, an expert Indian civic governance assistant.
 Your task: identify the exact responsible government authority for the citizen's problem.
 Be specific. Name the actual department/body. Reference Indian governance hierarchy.
-Return ONLY this structured format (no preamble):
+Return ONLY this structured format (no preamble, no extra text):
 
 **Problem Summary:** <1 sentence>
-**Responsible Authority:** <specific body name>
+**Responsible Authority:** <specific body name e.g. Varanasi Nagar Nigam>
 **Government Level:** <Central / State / Local Government>
-**Department:** <specific department>
-**Reasoning:** <2-3 sentences explaining why>
-**Suggested Action:** <concrete next step for the citizen>"""
+**Department:** <specific department e.g. Sanitation & Solid Waste Management>
+**Reasoning:** <2-3 sentences explaining why this body is responsible>
+**Suggested Action:** <one concrete step: e.g. File complaint on pgportal.gov.in or call 1533>
+**Official Website:** <single most relevant official Indian govt URL e.g. https://pgportal.gov.in>"""
 
     user = f"""Citizen Problem: {query['problem']}
 Location: {query['location']}
 Category: {query['category']}
 Predicted Jurisdiction: {jurisdiction} Government
 
-Retrieved Context:
-{context or 'No context available. Use your knowledge of Indian governance.'}
+Retrieved Context (use only if relevant to India):
+{context or 'No web context. Use your knowledge of Indian governance structure.'}
 
-Identify the responsible authority and provide actionable guidance."""
+Identify the responsible Indian government authority. Ignore any non-Indian sources in context."""
 
     resp = client.chat.completions.create(
         model="openai/gpt-oss-120b",
@@ -435,6 +438,7 @@ def parse_answer(text: str) -> dict:
         "Department": "",
         "Reasoning": "",
         "Suggested Action": "",
+        "Official Website": "",
     }
     for key in fields:
         pattern = rf"\*\*{key}:\*\*\s*(.+?)(?=\n\*\*|\Z)"
@@ -586,10 +590,11 @@ with col_result:
                 st.markdown(f"**🧠 Reasoning:** {reasoning}")
                 st.success(f"✅ Suggested Action: {action}")
 
-                if sources:
-                    st.markdown("**🔗 Sources**")
-                    for s in sources[:6]:
-                        st.markdown(f"- [{s}]({s})")
+                # Show only the official website the LLM identified — not all search results
+                official_url = clean(parsed.get("Official Website", ""))
+                if official_url and official_url.startswith("http"):
+                    st.markdown("**🔗 Official Reference**")
+                    st.markdown(f"[{official_url}]({official_url})")
 
                 with st.expander("🔎 Search Query Used"):
                     st.code(search_q)
