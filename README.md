@@ -1,4 +1,4 @@
-# DEEPSI — Democratic Engine for Empowering Public Service Inquiries
+# D
 
 A civic AI assistant that helps Indian citizens identify the correct government authority
 responsible for their civic problem, using LLM reasoning + live web search.
