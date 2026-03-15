@@ -294,34 +294,55 @@ Examples:
     return level if level in ["Central", "State", "Local"] else "Local"
 
 
+# Domains that are never useful for civic governance queries
+BLOCKED_DOMAINS = [
+    "merriam-webster.com", "dictionary.com", "cambridge.org",
+    "collinsdictionary.com", "wordreference.com", "vocabulary.com",
+    "thefreedictionary.com", "macmillandictionary.com", "yourdictionary.com",
+    "wikipedia.org", "wiktionary.org", "britannica.com",
+    "quora.com", "reddit.com", "youtube.com", "facebook.com",
+    "twitter.com", "instagram.com", "amazon.com", "flipkart.com",
+]
+
+TRUSTED_DOMAINS = [
+    "gov.in", "nic.in", "india.gov.in", "mygov.in",
+    "mohua.gov.in", "jansunwai.up.nic.in",
+]
+
 def generate_search_query(query: dict, jurisdiction: str) -> str:
-    parts = [
-        f"responsible authority {query['problem']}",
-        query['district'],
-        query['state'],
-        "India",
-        jurisdiction.lower() + " government",
-    ]
-    if query['category'] != "General":
-        parts.append(query['category'].lower())
+    # Build a concrete, civic-specific query — avoid generic words like "responsible"
+    problem_short = query["problem"][:80].strip()
+    district = query["district"]
+    state = query["state"]
+    cat = query["category"] if query["category"] not in ("", "General") else ""
+
+    if jurisdiction == "Central":
+        prefix = "central government ministry department India"
+    elif jurisdiction == "State":
+        prefix = f"{state} government department"
+    else:
+        prefix = f"municipal corporation nagar palika {district} {state}"
+
+    parts = [prefix, problem_short]
+    if cat:
+        parts.append(cat)
+    parts.append("complaint redressal India")
     return " ".join(parts)
 
 
-def perform_search(search_query: str, max_results: int = 7) -> list:
+def perform_search(search_query: str, max_results: int = 10) -> list:
     results = []
     try:
         with DDGS() as ddgs:
             for r in ddgs.text(search_query, max_results=max_results):
-                results.append(r)
+                url = r.get("href", "")
+                # Drop blocked domains immediately at fetch time
+                if not any(bd in url for bd in BLOCKED_DOMAINS):
+                    results.append(r)
     except Exception:
         pass
     return results
 
-
-TRUSTED_DOMAINS = [
-    "gov.in", "nic.in", "india.gov.in", "mygov.in",
-    "mohua.gov.in", "jansunwai.up.nic.in", ".nic.in",
-]
 
 def filter_domains(results: list) -> list:
     trusted, others = [], []
@@ -331,7 +352,9 @@ def filter_domains(results: list) -> list:
             trusted.append(r)
         else:
             others.append(r)
-    return (trusted + others)[:5]
+    # Prefer trusted gov sources; fall back to others only if needed
+    combined = trusted + others
+    return combined[:5]
 
 
 def extract_page_content(url: str, timeout: int = 6) -> str:
