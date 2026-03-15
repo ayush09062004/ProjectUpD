@@ -2,8 +2,33 @@ import streamlit as st
 import json
 import re
 import requests
-from groq import Groq
 import trafilatura
+
+# ─── Groq API via plain requests (no SDK needed) ──────────────────────────────
+def groq_chat(api_key: str, model: str, messages: list,
+              max_tokens: int = 600, temperature: float = 0.2) -> str:
+    """Call Groq chat completions using raw requests — works on any Python version."""
+    resp = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    try:
+        return (data["choices"][0]["message"]["content"] or "").strip()
+    except (KeyError, IndexError):
+        return ""
+
 
 # ─── Page Config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -264,7 +289,7 @@ def analyze_query(problem: str, state: str, district: str, locality: str, catego
     }
 
 
-def predict_jurisdiction(client: Groq, query: dict) -> str:
+def predict_jurisdiction(api_key: str, query: dict) -> str:
     prompt = f"""You are an Indian governance expert.
 Given this civic problem: "{query['problem']}"
 Category: {query['category']}
@@ -278,18 +303,11 @@ Examples:
 - Police, State road, Education board, Ration card → State
 - Garbage, Street light, Water supply, Birth certificate, Local road → Local"""
     
-    resp = client.chat.completions.create(
-        model="openai/gpt-oss-20b",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=20,
-        temperature=0,
-    )
-    try:
-        raw = resp.choices[0].message.content or ""
-        words = raw.strip().split()
-        level = words[0].capitalize() if words else "Local"
-    except (IndexError, AttributeError):
-        level = "Local"
+    raw = groq_chat(api_key, "openai/gpt-oss-20b",
+                    [{"role": "user", "content": prompt}],
+                    max_tokens=20, temperature=0)
+    words = raw.strip().split()
+    level = words[0].capitalize() if words else "Local"
     return level if level in ["Central", "State", "Local"] else "Local"
 
 
@@ -399,7 +417,7 @@ def build_context(filtered_results: list) -> tuple[str, list]:
     return "\n\n---\n\n".join(context_parts[:4]), sources
 
 
-def generate_final_answer(client: Groq, query: dict, jurisdiction: str, context: str) -> str:
+def generate_final_answer(api_key: str, query: dict, jurisdiction: str, context: str) -> str:
     system = """You are DEEPSI, an expert Indian civic governance assistant.
 Your task: identify the exact responsible government authority for the citizen's problem.
 Be specific. Name the actual department/body. Reference Indian governance hierarchy.
@@ -428,19 +446,10 @@ Instructions:
 - In "Sources Used", list only the source titles from Retrieved Context that actually informed your answer.
 - For "Official Website", only use well-known working Indian government portals. Do NOT guess URLs."""
 
-    resp = client.chat.completions.create(
-        model="openai/gpt-oss-120b",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        max_tokens=600,
-        temperature=0.2,
-    )
-    try:
-        return (resp.choices[0].message.content or "").strip()
-    except (IndexError, AttributeError):
-        return "Unable to generate answer. Please try again."
+    return groq_chat(api_key, "openai/gpt-oss-120b",
+                     [{"role": "system", "content": system},
+                      {"role": "user", "content": user}],
+                     max_tokens=600, temperature=0.2) or "Unable to generate answer. Please try again."
 
 
 # ─── Parse Answer ──────────────────────────────────────────────────────────────
@@ -545,7 +554,6 @@ with col_result:
                 st.error(e)
         else:
             try:
-                client = Groq(api_key=groq_key)
                 query = analyze_query(problem, selected_state, selected_district, locality, category)
 
                 progress_box = st.empty()
@@ -557,7 +565,7 @@ with col_result:
                     )
 
                 show_step("Step 1 — Predicting jurisdiction level…")
-                jurisdiction = predict_jurisdiction(client, query)
+                jurisdiction = predict_jurisdiction(groq_key, query)
 
                 show_step("Step 2 — Generating search query…")
                 search_q = generate_search_query(query, jurisdiction)
@@ -572,7 +580,7 @@ with col_result:
                 context, sources = build_context(filtered)
 
                 show_step("Step 6 — Generating final authority analysis…")
-                answer_text = generate_final_answer(client, query, jurisdiction, context)
+                answer_text = generate_final_answer(groq_key, query, jurisdiction, context)
                 parsed = parse_answer(answer_text)
 
                 progress_box.empty()
