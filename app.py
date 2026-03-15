@@ -574,7 +574,7 @@ with col_result:
                 reasoning = clean(parsed.get("Reasoning", "—"))
                 action    = clean(parsed.get("Suggested Action", "—"))
 
-                # ── Render using native Streamlit (no raw HTML interpolation) ──
+                # ── Render using native Streamlit ──
                 st.markdown(
                     f'''<div style="background:#0B1F4B;color:white;padding:0.7rem 1.1rem;border-radius:6px;font-size:1rem;font-weight:600;margin-bottom:0.5rem;">
                     🏛 {_html.escape(authority)}</div>''',
@@ -585,19 +585,43 @@ with col_result:
                     unsafe_allow_html=True,
                 )
                 st.markdown("---")
-                st.markdown(f"**📄 Summary**\n\n{summary}")
+                st.markdown(f"**📄 Problem Summary**\n\n{summary}")
                 st.markdown(f"**🏢 Department:** {dept}")
                 st.markdown(f"**🧠 Reasoning:** {reasoning}")
                 st.success(f"✅ Suggested Action: {action}")
 
-                # Show only the official website the LLM identified — not all search results
+                # ── Official URL: validate it resolves before showing ──
                 official_url = clean(parsed.get("Official Website", ""))
                 if official_url and official_url.startswith("http"):
-                    st.markdown("**🔗 Official Reference**")
-                    st.markdown(f"[{official_url}]({official_url})")
+                    try:
+                        import socket
+                        from urllib.parse import urlparse
+                        hostname = urlparse(official_url).hostname or ""
+                        socket.getaddrinfo(hostname, None, timeout=3)
+                        st.markdown("**🔗 Official Reference**")
+                        st.markdown(f"[{official_url}]({official_url})")
+                    except Exception:
+                        # URL doesn't resolve — silently skip it
+                        pass
 
-                with st.expander("🔎 Search Query Used"):
-                    st.code(search_q)
+                # ── Pipeline reasoning trace ──
+                with st.expander("🧩 How this answer was generated"):
+                    st.markdown(f"""
+**Step 1 — Jurisdiction Prediction**
+The problem was classified as **{jurisdiction} Government** responsibility based on the problem category and location.
+
+**Step 2 — Web Search**
+Searched for relevant Indian government sources using the topic: `{search_q}`
+
+**Step 3 — Sources Retrieved**
+{chr(10).join(f"- {r.get('title','')}: {r.get('href','')}" for r in filtered[:5]) or "No sources retrieved."}
+
+**Step 4 — Context Extracted**
+{f"{len(context)} characters of relevant text extracted from top sources." if context else "No content extracted — LLM used built-in knowledge."}
+
+**Step 5 — LLM Reasoning**
+Model `openai/gpt-oss-120b` analysed the problem, location, jurisdiction, and retrieved context to identify the responsible authority and suggest action.
+""")
 
             except Exception as ex:
                 st.error(f"Error: {ex}")
