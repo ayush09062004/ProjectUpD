@@ -280,7 +280,7 @@ Examples:
 - Garbage, Street light, Water supply, Birth certificate, Local road → Local"""
     
     resp = client.chat.completions.create(
-        model="gpt-oss-20b",
+        model="openai/gpt-oss-20b",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=10,
         temperature=0,
@@ -384,7 +384,7 @@ Retrieved Context:
 Identify the responsible authority and provide actionable guidance."""
 
     resp = client.chat.completions.create(
-        model="gpt-oss-120b",
+        model="openai/gpt-oss-120b",
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
