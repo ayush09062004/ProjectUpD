@@ -282,10 +282,15 @@ Examples:
     resp = client.chat.completions.create(
         model="openai/gpt-oss-20b",
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=10,
+        max_tokens=20,
         temperature=0,
     )
-    level = resp.choices[0].message.content.strip().split()[0]
+    try:
+        raw = resp.choices[0].message.content or ""
+        words = raw.strip().split()
+        level = words[0].capitalize() if words else "Local"
+    except (IndexError, AttributeError):
+        level = "Local"
     return level if level in ["Central", "State", "Local"] else "Local"
 
 
@@ -392,7 +397,10 @@ Identify the responsible authority and provide actionable guidance."""
         max_tokens=600,
         temperature=0.2,
     )
-    return resp.choices[0].message.content.strip()
+    try:
+        return (resp.choices[0].message.content or "").strip()
+    except (IndexError, AttributeError):
+        return "Unable to generate answer. Please try again."
 
 
 # ─── Parse Answer ──────────────────────────────────────────────────────────────
