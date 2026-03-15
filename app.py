@@ -531,50 +531,42 @@ with col_result:
 
                 progress_box.empty()
 
-                # ── Render Result ──
-                jlevel = parsed.get("Government Level") or jurisdiction + " Government"
-                authority = parsed.get("Responsible Authority", "—")
-                dept = parsed.get("Department", "—")
-                summary = parsed.get("Problem Summary", problem[:120])
-                reasoning = parsed.get("Reasoning", "—")
-                action = parsed.get("Suggested Action", "—")
+                # ── Sanitise parsed fields (strip markdown bold, stray HTML tags) ──
+                import html as _html
+                def clean(val: str) -> str:
+                    import re as _re
+                    val = val.strip()
+                    val = _re.sub(r"\*{1,2}(.*?)\*{1,2}", r"\1", val)   # remove **bold** / *italic*
+                    val = _re.sub(r"<[^>]+>", "", val)                      # strip any HTML tags
+                    return val.strip()
 
-                st.markdown(f"""
-<div class="result-card">
-    <div style="margin-bottom:0.8rem;">
-        <span class="authority-badge">🏛 {authority}</span>
-        <span class="gov-level">{jlevel}</span>
-    </div>
+                jlevel    = clean(parsed.get("Government Level") or jurisdiction + " Government")
+                authority = clean(parsed.get("Responsible Authority", "—"))
+                dept      = clean(parsed.get("Department", "—"))
+                summary   = clean(parsed.get("Problem Summary", problem[:120]))
+                reasoning = clean(parsed.get("Reasoning", "—"))
+                action    = clean(parsed.get("Suggested Action", "—"))
 
-    <div style="font-family:'Noto Serif',serif; font-size:0.92rem; color:#374151; margin-bottom:1rem; line-height:1.6;">
-        {summary}
-    </div>
-
-    <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
-        <tr>
-            <td style="padding:0.4rem 0.6rem; font-weight:700; color:var(--saffron); width:35%; border-bottom:1px solid var(--border);">Department</td>
-            <td style="padding:0.4rem 0.6rem; border-bottom:1px solid var(--border);">{dept}</td>
-        </tr>
-        <tr>
-            <td style="padding:0.4rem 0.6rem; font-weight:700; color:var(--saffron); border-bottom:1px solid var(--border);">Reasoning</td>
-            <td style="padding:0.4rem 0.6rem; border-bottom:1px solid var(--border); font-size:0.85rem; color:#4B5563;">{reasoning}</td>
-        </tr>
-        <tr>
-            <td style="padding:0.4rem 0.6rem; font-weight:700; color:#138808;">Suggested Action</td>
-            <td style="padding:0.4rem 0.6rem; font-size:0.88rem;">{action}</td>
-        </tr>
-    </table>
-</div>
-""", unsafe_allow_html=True)
+                # ── Render using native Streamlit (no raw HTML interpolation) ──
+                st.markdown(
+                    f'''<div style="background:#0B1F4B;color:white;padding:0.7rem 1.1rem;border-radius:6px;font-size:1rem;font-weight:600;margin-bottom:0.5rem;">
+                    🏛 {_html.escape(authority)}</div>''',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    f'''<span style="background:linear-gradient(135deg,#FF6B00,#D4A017);color:white;padding:0.2rem 0.9rem;border-radius:20px;font-size:0.78rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;">{_html.escape(jlevel)}</span>''',
+                    unsafe_allow_html=True,
+                )
+                st.markdown("---")
+                st.markdown(f"**📄 Summary**\n\n{summary}")
+                st.markdown(f"**🏢 Department:** {dept}")
+                st.markdown(f"**🧠 Reasoning:** {reasoning}")
+                st.success(f"✅ Suggested Action: {action}")
 
                 if sources:
-                    st.markdown('<div class="section-label" style="margin-top:1rem;">🔗 Sources</div>', unsafe_allow_html=True)
-                    chips = "".join(
-                        f'<a class="source-chip" href="{s}" target="_blank">{s[:55]}…</a>'
-                        if len(s) > 55 else f'<a class="source-chip" href="{s}" target="_blank">{s}</a>'
-                        for s in sources[:6]
-                    )
-                    st.markdown(chips, unsafe_allow_html=True)
+                    st.markdown("**🔗 Sources**")
+                    for s in sources[:6]:
+                        st.markdown(f"- [{s}]({s})")
 
                 with st.expander("🔎 Search Query Used"):
                     st.code(search_q)
